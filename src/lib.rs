@@ -13,6 +13,18 @@ use error::Error;
 pub type Float = f32;
 type TransitionProbabilities = [Float; 3];
 
+#[derive(Copy, Clone, Debug)]
+pub struct IndelTransitionProbabilities {
+    pub outframe: Float, // frameshift
+    pub inframe: Float, // not a frameshift
+}
+
+impl Default for IndelTransitionProbabilities {
+    fn default() -> Self {
+        Self{outframe: Float::NAN, inframe: Float::NAN}
+    }
+}
+
 // X -> X will always be NaN
 #[derive(Debug)]
 pub struct SubstitutionRates {
@@ -80,6 +92,11 @@ pub struct PaPaPred {
 
 impl PaPaPred {
     /// Create a PaPaPred instance.
+    ///
+    /// The input file must consist of 3 space-separated columns:
+    /// 1) The substitution in the form X->Y where X, Y in {ACGT}
+    /// 2) The pattern in UIPAC notation.
+    /// 3) The probability for the substitution with that pattern
     ///
     /// You provide the `path` to the sequence-context point mutation probabilities file.
     /// If you want to ensure that the patters have a minimum size, you can provide a value for
@@ -167,6 +184,88 @@ impl PaPaPred {
 
     pub fn kmer_size(&self) -> usize {
         1 + 2 * self.radius
+    }
+
+    pub fn radius(&self) -> usize {
+        self.radius
+    }
+}
+
+pub struct PaPaPredIndel {
+    radius: usize,
+    lookup: Vec<IndelTransitionProbabilities>, // ( oven kmer -> base 4 ) -> IndelTransitionProbabilities
+}
+
+impl PaPaPredIndel {
+    /// Create a PaPaPredIndel instance.
+    ///
+    /// Note that this class treats insertions and deletions the same, hence "indel".
+    /// But it distinguishes between outframe (=frameshift) and inframe (non-frameshift) mutations.
+    ///
+    /// The input file must consist of 3 space-separated columns:
+    /// 1) The pattern in UIPAC notation.
+    /// 2) The probability for a frameshift indel
+    /// 3) The probability for a non-frameshift indel
+    ///
+    /// You provide the `path` to the sequence-context point mutation probabilities file.
+    /// If you want to ensure that the patters have a minimum size, you can provide a value for
+    /// `min_kmer_size` which will pad all patterns with Ns at the end. The minimum kmer size has
+    /// to be an even number because the insertion or deletion should happen right in the middle
+    /// of the sequence
+    pub fn new<P: AsRef<Path>>(path: P, min_kmer_size: Option<usize>) -> Result<Self, Error> {
+        let mut kmer_size = 0; // will be detected from input size
+        let template: Vec<IndelTransitionProbabilities> = vec![IndelTransitionProbabilities::default()]; // missing values should be treated as NaNs
+        let mut lookup: Vec<IndelTransitionProbabilities> = Vec::new();
+        for record_result in Tabfile::open(path)?.separator(' ') {
+            let record = record_result?;
+            let tokens = record.fields();
+
+            let uipac_context = pad_size(tokens[0], min_kmer_size.unwrap_or(1));
+            let frameshift_probability = tokens[1].parse::<Float>().unwrap();
+            let inframe_probability = tokens[2].parse::<Float>().unwrap();
+
+            if kmer_size == 0 { // first line of input
+                kmer_size = uipac_context.len();
+                if kmer_size % 2 == 1 {
+                    return Err(Error::BadKmerSize(kmer_size));
+                }
+                lookup = template.repeat(4usize.pow(kmer_size as u32));
+            } else if uipac_context.len() != kmer_size {
+                let message = format!(
+                    "The following line does not have length {}: {}",
+                    kmer_size,
+                    record.line()
+                );
+                return Err(Error::FileFormat { message });
+            }
+
+            let rate = IndelTransitionProbabilities{
+                outframe: frameshift_probability,
+                inframe: inframe_probability,
+            };
+
+            for context in expand_uipac(&uipac_context) {
+                let context_base4 = seq2base_four(&context)?;
+                lookup[context_base4] = rate;
+                let complement_context = base4_reverse_complement(context_base4, kmer_size);
+                lookup[complement_context] = rate;
+            }
+        }
+        let radius = kmer_size / 2;
+        Ok(Self{radius, lookup})
+    }
+
+    /// Query the mutation rates for a sequence context
+    ///
+    /// The indel is assumed to happen inbetween the two middle nuleotides
+    pub fn rates(&self, seq: &str) -> Result<IndelTransitionProbabilities, Error> {
+        let index = seq2base_four(seq)?;
+        let rates = self.lookup[index];
+        Ok(rates)
+    }
+
+    pub fn kmer_size(&self) -> usize {
+        2 * self.radius
     }
 
     pub fn radius(&self) -> usize {
@@ -443,6 +542,33 @@ mod tests {
         assert_eq!(rates.c, 7.8399744e-06);
         assert_eq!(rates.g, 3.8916667e-05);
         assert_eq!(rates.t, 6.6361449e-06);
+    }
+
+    #[test]
+    fn test_papapred_indel() {
+        let full_input_file = "test_assets/PaPa_rates_indel.txt";
+        let papa = PaPaPredIndel::new(full_input_file, None).unwrap();
+
+        let rates = papa.rates("ACGTAC").unwrap();
+        assert_eq!(rates.outframe, 0.25);
+        assert_eq!(rates.inframe, 0.75);
+
+        let rates = papa.rates("CATCAT").unwrap();
+        assert_eq!(rates.outframe, 0.125);
+        assert_eq!(rates.inframe, 0.5625);
+
+        let rates = papa.rates("TTATGG").unwrap();
+        assert_eq!(rates.outframe, 0.5);
+        assert_eq!(rates.inframe, 0.625);
+
+        let rates = papa.rates("GGCGTA").unwrap();
+        assert_eq!(rates.outframe, 0.3125);
+        assert_eq!(rates.inframe, 0.375);
+
+        let rates = papa.rates("TTTTTT").unwrap();
+        assert!(rates.outframe.is_nan());
+        assert!(rates.inframe.is_nan());
+
     }
 
     #[test]
