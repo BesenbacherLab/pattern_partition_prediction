@@ -110,6 +110,11 @@ impl PaPaPred {
         for record_result in Tabfile::open(path)?.separator(' ') {
             let record = record_result?;
             let tokens = record.fields();
+
+            if tokens[0].starts_with('#') || tokens.len() == 0 {
+                continue // ignore header or comments
+            }
+
             let substitution = tokens[0].parse::<Substitution>().unwrap();
             let uipac_context = pad_size(tokens[1], min_kmer_size.unwrap_or(1));
             let rate = tokens[2].parse::<Float>().unwrap();
@@ -219,6 +224,9 @@ impl PaPaPredIndel {
         for record_result in Tabfile::open(path)?.separator(' ') {
             let record = record_result?;
             let tokens = record.fields();
+            if tokens[0].starts_with('#') || tokens.len() == 0 {
+                continue // ignore header or comments
+            }
 
             let uipac_context = pad_size(tokens[0], min_kmer_size.unwrap_or(1));
             let frameshift_probability = tokens[1].parse::<Float>().unwrap();
@@ -431,12 +439,6 @@ fn expand_uipac(seq: &str) -> Vec<String> {
 }
 
 fn pad_size(seq: &str, min_size: usize) -> Cow<str> {
-    if min_size % 2 == 0 {
-        panic!(
-            "Only odd numbers are allowed. Provided number: {}",
-            min_size
-        );
-    }
     let len = seq.len();
     if len >= min_size {
         Cow::Borrowed(seq)
@@ -625,5 +627,10 @@ mod tests {
         assert_eq!(pad_size("123", 3), "123");
         assert_eq!(pad_size("123", 5), "N123N");
         assert_eq!(pad_size("123", 7), "NN123NN");
+
+        assert_eq!(pad_size("1234", 2), "1234");
+        assert_eq!(pad_size("1234", 4), "1234");
+        assert_eq!(pad_size("1234", 6), "N1234N");
+        assert_eq!(pad_size("1234", 8), "NN1234NN");
     }
 }

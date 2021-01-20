@@ -1,6 +1,6 @@
 [package]
 name = "pattern_partition_prediction"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jörn Bethune <joern@localhost>"]
 edition = "2018"
 description = "Reading and querying k-mer pattern partition information"
