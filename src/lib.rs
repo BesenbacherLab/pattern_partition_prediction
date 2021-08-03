@@ -255,8 +255,8 @@ impl PaPaPredIndel {
             for context in expand_uipac(&uipac_context) {
                 let context_base4 = seq2base_four(&context)?;
                 lookup[context_base4] = rate;
-                let complement_context = base4_reverse_complement(context_base4, kmer_size);
-                lookup[complement_context] = rate;
+                //let complement_context = base4_reverse_complement(context_base4, kmer_size);
+                //lookup[complement_context] = rate;
             }
         }
         let radius = kmer_size / 2;
