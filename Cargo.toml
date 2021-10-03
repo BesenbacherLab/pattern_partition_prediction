@@ -5,7 +5,7 @@ authors = ["Jörn Bethune <joern@localhost>"]
 edition = "2018"
 description = "Reading and querying k-mer pattern partition information"
 readme = "README.md"
-repository = "https://github.com/jbethune/pattern_partition_prediction/"
+repository = "https://github.com/BesenbacherLab/pattern_partition_prediction"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
