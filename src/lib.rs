@@ -438,7 +438,7 @@ fn expand_uipac(seq: &str) -> Vec<String> {
     }
 }
 
-fn pad_size(seq: &str, min_size: usize) -> Cow<str> {
+fn pad_size(seq: &str, min_size: usize) -> Cow<'_, str> {
     let len = seq.len();
     if len >= min_size {
         Cow::Borrowed(seq)
